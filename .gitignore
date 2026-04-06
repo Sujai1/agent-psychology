@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Experiments and large data (SWE-bench trajectories, logs)
+experiments/
+aws/
+embeddings_takehome/
+samples/
+logs/
+papers/
+terminal-bench-2/
+gso-experiments/
+
+# Embeddings from cluster (large files, don't sync back)
+out/
+
+
+# Output files
+*.out
+*.jsonl
+!data/swebench_verified/responses.jsonl
+!data/gso/responses.jsonl
+!data/swebench_pro/responses.jsonl
+!data/terminalbench/responses.jsonl
+!data/terminalbench/responses_raw.jsonl
+!data/terminalbench/tasks.jsonl
+*.jsonlines
+*.npz
+!embeddings/*.npz
+
+# Matplotlib cache
+.cache/
+.mplconfig/
+
+# Secrets
+.env
+
+# OS files
+.DS_Store
+*.swp
+*~
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# All experiment outputs (regenerable)
+output/
+
+# Overnight logs
+overnight.log
+overnight_resume.log
+
+# Personal cluster setup notes
+MIT_ENGAGING_SETUP.md
+
+# Paper PDFs (reference papers in root)
+*.pdf
+
+# Generated plots
+training_curves.png
+
+# Misc
+threshold_sweep.log
+embed_pca_vs_oracle_theta__model.csv
+CLAUDE.md
