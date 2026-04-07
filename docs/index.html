@@ -79,7 +79,15 @@
 
 <p>The frontier is <strong>relative to the agent</strong>: a task might be frontier for a mid-tier agent but trivially easy for a strong one. We label (agent, task) pairs, not tasks in isolation.</p>
 
-<p>Within each band, we measure: <strong>per-band AUC</strong> (can the predictor separate successes from failures?), <strong>band confusion matrix</strong> (when it predicts band X, where does the pair actually fall?), and <strong>frontier precision/recall</strong> (among predicted frontier pairs, what fraction are truly frontier?).</p>
+<h3>How AUC-ROC works</h3>
+
+<p>Each (agent, task) pair has an <strong>actual outcome</strong> (0 = failed, 1 = succeeded) and a <strong>predicted score</strong> (the predictor's estimated success probability). AUC-ROC answers: if you pick a random pair that succeeded and a random pair that failed, what's the probability the predictor gave the success a higher score? AUC = 1.0 means the predictor always ranks successes above failures; AUC = 0.5 means it's no better than random.</p>
+
+<p><strong>Why overall AUC can be much higher than per-band AUC:</strong> overall AUC includes <em>cross-band</em> comparisons &mdash; e.g., a success from the easy band (pred_p &asymp; 0.9) vs. a failure from the hard band (pred_p &asymp; 0.1). These are trivially correct and dominate the metric. Per-band AUC restricts to pairs <em>within</em> the same band, removing these easy comparisons and isolating the harder question: can the predictor distinguish outcomes among similarly-difficult tasks?</p>
+
+<h3>What we measure</h3>
+
+<p>Within each band: <strong>per-band AUC</strong> (can the predictor separate successes from failures among pairs of similar difficulty?), <strong>band confusion matrix</strong> (when it predicts band X, where does the pair actually fall?), and <strong>frontier precision/recall</strong> (among predicted frontier pairs, what fraction are truly frontier?).</p>
 
 <!-- ───────────── RESULTS ───────────── -->
 <h2 id="results">Results</h2>
