@@ -34,6 +34,10 @@ PREDICTOR_COLORS = {
     "llm_judge": "#ff7f0e",
     "grouped": "#d62728",
     "constant_baseline": "#9e9e9e",
+    "weighted_ridge": "#17becf",
+    "uncertainty": "#bcbd22",
+    "direct": "#e377c2",
+    "frontier_classifier": "#7f7f7f",
 }
 
 PREDICTOR_DISPLAY = {
@@ -42,9 +46,17 @@ PREDICTOR_DISPLAY = {
     "llm_judge": "LLM Judge",
     "grouped": "Combined",
     "constant_baseline": "Baseline",
+    "weighted_ridge": "Weighted Ridge",
+    "uncertainty": "Uncertainty",
+    "direct": "Direct (GBM)",
+    "frontier_classifier": "Frontier Clf",
 }
 
-PREDICTOR_ORDER = ["constant_baseline", "embedding", "llm_judge", "grouped", "oracle"]
+PREDICTOR_ORDER = [
+    "constant_baseline", "embedding", "llm_judge", "grouped",
+    "weighted_ridge", "uncertainty", "direct", "frontier_classifier",
+    "oracle",
+]
 
 
 def plot_calibration(
@@ -187,7 +199,8 @@ def plot_band_aucs(
         ax.set_xticks(x)
         ax.set_xticklabels(band_labels, fontsize=9)
         ax.set_ylim(0, 1.05)
-        ax.legend(fontsize=8, loc="upper right")
+        ax.legend(fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.02),
+                  ncol=min(n_preds + 1, 5), frameon=False)
         ax.grid(axis="y", alpha=0.2)
         ax.set_axisbelow(True)
 
