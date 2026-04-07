@@ -45,7 +45,7 @@
 
 <ol>
   <li><strong>Curriculum scheduling.</strong> Easy&rarr;hard curricula (<a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a>, <a href="https://arxiv.org/html/2602.14868">Goldilocks RL</a>, <a href="https://arxiv.org/abs/2508.05015">SPaRFT</a>) need difficulty estimates across the full spectrum, not just the extremes.</li>
-  <li><strong>Environment search.</strong> When generating RL environments, a cheap difficulty predictor helps filter candidates &mdash; but only if it can resolve the medium-difficulty range where the agent would learn most.</li>
+  <li><strong>Environment search.</strong> When generating RL environments, a cheap difficulty predictor helps filter candidates &mdash; filtering out extremely easy or hard tasks is already useful, but being able to also resolve the medium-difficulty range would enable more efficient exploration of the environment space.</li>
 </ol>
 
 <p>We ask: <strong>is the 0.84 AUC driven by the easy cases, or is it uniform?</strong></p>
