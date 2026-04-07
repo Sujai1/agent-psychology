@@ -18,99 +18,75 @@
     <a href="#improvements">Improvements</a>
     <a href="#takeaways">Takeaways</a>
     <a href="https://arxiv.org/abs/2604.00594">Original Paper</a>
-    <a href="https://github.com/Sujai1/agent-psychometrics">Code</a>
+    <a href="https://github.com/Sujai1/agent-psychology">Code</a>
   </div>
 </nav>
 
 <main>
 
-<!-- ───────────── HERO ───────────── -->
 <h1>How Uniformly Good Are IRT Difficulty Predictors?</h1>
-<p class="tagline">The predictors from <em>Agent Psychometrics</em> work well overall &mdash; but not equally well across all difficulty levels. We investigate where they break down, why it matters, and what can be done about it.</p>
+<p class="tagline">The predictors from <em>Agent Psychometrics</em> work well overall &mdash; but not equally well across all difficulty levels.</p>
 <p class="meta">
   Building on <a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics (Ge et al., 2026)</a> &middot;
-  <a href="https://github.com/Sujai1/agent-psychometrics">GitHub</a> &middot;
+  <a href="https://github.com/Sujai1/agent-psychology">GitHub</a> &middot;
   SWE-bench Verified &middot; 500 tasks &middot; 134 agents &middot; 67,000 (agent, task) pairs
 </p>
 
 <div class="callout">
-  <p><strong>Key finding:</strong> The paper's predictors achieve 0.84 AUC-ROC overall &mdash; but this performance is not uniform across difficulty levels. Predictors excel at identifying obviously easy and obviously hard tasks (AUC &gt; 0.6), but in the medium-difficulty "frontier" band &mdash; tasks where agents succeed 40&ndash;60% of the time &mdash; discriminative power drops to 0.51, barely above random. This is a fundamental bottleneck: even the oracle (full IRT with all data) only reaches 0.58 in this band. We test four modified approaches and find that while frontier discrimination remains intractable, calibration can be substantially improved.</p>
+  <p><strong>Key finding:</strong> The paper's 0.84 AUC-ROC is not uniform across difficulty levels. Predictors excel at identifying easy and hard tasks, but in the medium-difficulty "frontier" band (40&ndash;60% success rate), discriminative power drops to 0.51 &mdash; barely above random. This is a fundamental bottleneck: even the oracle only reaches 0.58 in this band. Modified approaches can partially recover frontier identification via improved recall, but the core discrimination limitation persists.</p>
 </div>
 
 <!-- ───────────── MOTIVATION ───────────── -->
-<h2 id="motivation">Motivation: Where Uniform Performance Matters</h2>
+<h2 id="motivation">Motivation</h2>
 
-<p><a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics</a> (Ge et al., 2026) shows that task difficulty in agentic coding benchmarks can be predicted from cheap features &mdash; LLM-as-a-judge ratings and embeddings &mdash; without running any agents. The paper demonstrates strong overall predictive performance (0.84 AUC-ROC) and frames this as useful for benchmark calibration and efficient agent evaluation.</p>
+<p><a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics</a> (Ge et al., 2026) predicts task difficulty in agentic coding benchmarks from cheap features &mdash; LLM-as-a-judge ratings and embeddings &mdash; without running any agents. The paper reports 0.84 AUC-ROC overall.</p>
 
-<p>But overall AUC-ROC can mask important non-uniformity. We would naturally expect the predictor to do well on tasks that are obviously easy or obviously hard &mdash; these extremes are the easiest to classify. The more interesting question is: <strong>how well does the predictor perform across the full difficulty spectrum?</strong> In particular, can it resolve the medium-difficulty region where outcomes are genuinely uncertain?</p>
-
-<p>This matters for at least two practical reasons:</p>
+<p>But overall AUC-ROC can mask non-uniformity. We'd expect the predictor to do well on obviously easy or hard tasks. The interesting question is whether it resolves the middle &mdash; tasks where outcomes are genuinely uncertain. This matters for:</p>
 
 <ol>
-  <li><strong>Curriculum scheduling for RL training.</strong> Recent work on training LLMs with RL &mdash; including <a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a> (2025), <a href="https://arxiv.org/html/2602.14868">Goldilocks RL</a> (2026), and <a href="https://arxiv.org/abs/2508.05015">SPaRFT</a> (2025) &mdash; shows that scheduling tasks by difficulty (easy&rarr;hard) can substantially improve sample efficiency, in some cases by <a href="https://arxiv.org/abs/2508.05015">up to 100&times;</a>. To build an effective curriculum, you need to know not just <em>which</em> tasks are easy or hard, but also which fall in between. If the predictor only resolves the extremes, the curriculum has a blind spot in the middle.</li>
-
-  <li><strong>Guiding environment search and generation.</strong> If you're procedurally generating RL training environments, a cheap difficulty predictor lets you evaluate candidates without running agents. But if the predictor can only tell you "this is easy" or "this is hard" and is unreliable in between, it can't help you search for environments at the right difficulty level for your current agent &mdash; the <a href="https://arxiv.org/abs/2405.02481">zone of proximal development</a> where learning is fastest.</li>
+  <li><strong>Curriculum scheduling.</strong> Easy&rarr;hard curricula (<a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a>, <a href="https://arxiv.org/html/2602.14868">Goldilocks RL</a>, <a href="https://arxiv.org/abs/2508.05015">SPaRFT</a>) need difficulty estimates across the full spectrum, not just the extremes.</li>
+  <li><strong>Environment search.</strong> When generating RL environments, a cheap difficulty predictor helps filter candidates &mdash; but only if it can resolve the medium-difficulty range where the agent would learn most.</li>
 </ol>
 
-<p>So we ask: <strong>is the paper's strong overall AUC driven by the easy cases, or is it uniform across difficulty levels?</strong></p>
+<p>We ask: <strong>is the 0.84 AUC driven by the easy cases, or is it uniform?</strong></p>
 
 <!-- ───────────── BACKGROUND ───────────── -->
-<h2 id="background">Background: The IRT Prediction Pipeline</h2>
+<h2 id="background">Background</h2>
 
-<p>The paper uses <strong>Item Response Theory (IRT)</strong>, borrowed from psychometrics (SAT, GRE). Each agent has an ability &theta; and each task has a difficulty <em>b</em>. The probability of success is:</p>
+<p>The paper uses <strong>Item Response Theory (IRT)</strong>. Each agent has ability &theta;, each task has difficulty <em>b</em>:</p>
 
 <div class="formula">P(success) = sigmoid(&theta;<sub>agent</sub> &minus; b<sub>task</sub>)</div>
 
-<p>The model is fit on a <strong>binary response matrix</strong> &mdash; 134 agents &times; 500 tasks for SWE-bench Verified, where each cell records whether the agent solved the task (1) or not (0). Training uses variational inference to estimate &theta; and <em>b</em> for all agents and tasks.</p>
+<p>Trained on a binary response matrix (134 agents &times; 500 tasks). The paper predicts <em>b</em> from task features via Ridge regression, plugs predicted <em>b&#770;</em> back into the IRT formula, and evaluates with AUC-ROC. The Combined predictor (5,120-dim embeddings + 15 LLM judge features) achieves 0.842.</p>
 
-<p>The paper's prediction task: can you predict <em>b</em> from cheap task features, without running any agents? They use two feature types:</p>
-<ul>
-  <li><strong>Embeddings</strong>: 5,120-dimensional vectors from DeepSeek-R1 encoding the problem statement</li>
-  <li><strong>LLM-as-a-Judge features</strong>: 15 integer-scored attributes (1&ndash;5 scale) like <code>solution_complexity</code>, <code>debugging_complexity</code>, <code>fix_localization</code>, rated by an LLM examining the task</li>
-</ul>
-
-<p>A Ridge regression predicts <em>b&#770;</em> from features, which is plugged back into the IRT formula. The paper evaluates with <strong>AUC-ROC</strong> on held-out tasks. The Combined predictor (embeddings + judge features) achieves <strong>0.842 AUC-ROC</strong> on SWE-bench Verified.</p>
-
-<h3>Why AUC-ROC can be misleading</h3>
-
-<p>AUC-ROC measures ranking quality over <em>all</em> (agent, task) pairs. But the distribution is heavily skewed: 72% of pairs are in the extreme bands (agent almost certainly succeeds or fails). Getting those right is easy and inflates the metric. The question is whether the predictor adds value in the <strong>remaining 28%</strong> where outcomes are uncertain.</p>
+<p>72% of (agent, task) pairs are in the extreme bands (&lt;20% or &gt;80% success probability). Getting those right is easy and inflates overall AUC.</p>
 
 <!-- ───────────── METHODOLOGY ───────────── -->
 <h2 id="methodology">Methodology</h2>
 
-<p>We reuse the paper's <strong>exact 5-fold cross-validation setup</strong> &mdash; same random seed, same fold-specific IRT models, same predictors, same features. Our overall AUC numbers match Table 2 of the paper exactly, confirming we're evaluating identical models.</p>
+<p>We reuse the paper's <strong>exact 5-fold CV setup</strong> &mdash; same seed, same fold-specific IRT models, same predictors. Our overall AUC numbers match Table 2 exactly.</p>
 
-<h3>Defining the frontier</h3>
-
-<p>For each (agent, task) pair, we compute the <strong>oracle probability</strong> using the full IRT model (trained on all 500 tasks):</p>
-
-<div class="formula">oracle_p = sigmoid(&theta;<sub>oracle</sub> &minus; b<sub>oracle</sub>)</div>
-
-<p>We then bin all 67,000 pairs into five difficulty bands:</p>
+<p>For each of the 67,000 (agent, task) test pairs, we compute the <strong>oracle probability</strong> <code>oracle_p = sigmoid(&theta;<sub>oracle</sub> &minus; b<sub>oracle</sub>)</code> using the full IRT model, then bin pairs into five bands:</p>
 
 <table>
-  <tr><th>Band</th><th>oracle_p</th><th>Meaning</th><th>Pairs</th><th>Share</th></tr>
-  <tr><td>[0.0, 0.2)</td><td>Agent almost certainly fails</td><td>Very hard</td><td>22,977</td><td>34%</td></tr>
-  <tr><td>[0.2, 0.4)</td><td>Agent probably fails</td><td>Hard</td><td>6,019</td><td>9%</td></tr>
-  <tr><td style="background:#fff8f0; font-weight:600;">[0.4, 0.6)</td><td style="background:#fff8f0;">Coin flip</td><td style="background:#fff8f0; font-weight:600;">The Frontier</td><td style="background:#fff8f0;">5,492</td><td style="background:#fff8f0;">8%</td></tr>
-  <tr><td>[0.6, 0.8)</td><td>Agent probably succeeds</td><td>Easy</td><td>7,192</td><td>11%</td></tr>
-  <tr><td>[0.8, 1.0]</td><td>Agent almost certainly succeeds</td><td>Very easy</td><td>25,320</td><td>38%</td></tr>
+  <tr><th>Band</th><th>Meaning</th><th>Pairs</th><th>Share</th></tr>
+  <tr><td>[0.0, 0.2)</td><td>Agent almost certainly fails</td><td>22,977</td><td>34%</td></tr>
+  <tr><td>[0.2, 0.4)</td><td>Agent probably fails</td><td>6,019</td><td>9%</td></tr>
+  <tr><td style="background:#fff8f0; font-weight:600;">[0.4, 0.6)</td><td style="background:#fff8f0; font-weight:600;">The frontier &mdash; coin flip</td><td style="background:#fff8f0;">5,492</td><td style="background:#fff8f0;">8%</td></tr>
+  <tr><td>[0.6, 0.8)</td><td>Agent probably succeeds</td><td>7,192</td><td>11%</td></tr>
+  <tr><td>[0.8, 1.0]</td><td>Agent almost certainly succeeds</td><td>25,320</td><td>38%</td></tr>
 </table>
 
-<p><strong>Important nuance:</strong> the frontier is relative to the agent. A task might be frontier for a mid-tier agent (&theta; &approx; <em>b</em>, so oracle_p &approx; 0.5) but trivially easy for a strong agent (&theta; &Gt; <em>b</em>, oracle_p &approx; 0.95). We're labeling <em>(agent, task) pairs</em>, not tasks in isolation.</p>
+<p>The frontier is <strong>relative to the agent</strong>: a task might be frontier for a mid-tier agent but trivially easy for a strong one. We label (agent, task) pairs, not tasks in isolation.</p>
 
-<h3>What we measure</h3>
-<ul>
-  <li><strong>Per-band AUC:</strong> Within each band, can the predictor separate actual successes from failures?</li>
-  <li><strong>Band confusion matrix:</strong> When the predictor says a pair is in band X, which band is it actually in?</li>
-  <li><strong>Frontier precision/recall:</strong> Among predicted frontier pairs, what fraction are truly frontier?</li>
-  <li><strong>Calibration (ECE):</strong> When the predictor says p=0.4, is the actual success rate ~40%?</li>
-</ul>
+<p>Within each band, we measure: <strong>per-band AUC</strong> (can the predictor separate successes from failures?), <strong>band confusion matrix</strong> (when it predicts band X, where does the pair actually fall?), and <strong>frontier precision/recall</strong> (among predicted frontier pairs, what fraction are truly frontier?).</p>
 
 <!-- ───────────── RESULTS ───────────── -->
-<h2 id="results">Results: The Paper's Predictors at the Frontier</h2>
+<h2 id="results">Results</h2>
 
 <h3>Predictive power collapses at the frontier</h3>
+
+<p>For each predictor and each oracle difficulty band, we compute AUC-ROC on just the (agent, task) pairs in that band. The table shows whether the predictor can separate actual successes from failures <em>within</em> each difficulty region:</p>
 
 <table>
   <tr><th>Predictor</th><th>[0, 0.2)</th><th>[0.2, 0.4)</th><th>[0.4, 0.6)</th><th>[0.6, 0.8)</th><th>[0.8, 1.0)</th><th>Overall</th></tr>
@@ -121,20 +97,20 @@
   <tr><td>Baseline</td><td>0.503</td><td>0.501</td><td class="highlight">0.508</td><td>0.527</td><td>0.565</td><td>0.716</td></tr>
 </table>
 
-<p>The [0.4, 0.6) column tells the story: <strong>all predictors achieve AUC &asymp; 0.51, essentially random.</strong> The impressive overall AUC is driven entirely by separating the extremes. Within the frontier, the predictor knows nothing.</p>
+<p>The [0.4, 0.6) column: <strong>all predictors achieve AUC &asymp; 0.51, essentially random.</strong> The overall AUC is driven entirely by separating the extremes.</p>
 
 <div class="callout warning">
-  <p><strong>Even the Oracle only gets 0.579 in the frontier band.</strong> This is the IRT model with access to <em>all</em> data &mdash; the theoretical upper bound. The fact that it can't discriminate well within the frontier suggests this is a fundamental limitation of the 1PL IRT framework and the available features, not a modeling problem we can fix.</p>
+  <p><strong>Even the Oracle only gets 0.579 in the frontier band</strong> &mdash; this is the IRT model with access to <em>all</em> data. The limitation is fundamental, not a modeling problem.</p>
 </div>
 
 <figure>
-  <img src="plots/band_aucs.png" alt="Per-band AUC bar chart showing performance collapse in the frontier band">
-  <figcaption>Figure 1: AUC-ROC within each oracle difficulty band. The frontier band [0.4, 0.6) is highlighted. All predictors cluster near 0.5 (random) in this region, while achieving meaningful discrimination at the extremes.</figcaption>
+  <img src="plots/band_aucs.png" alt="Per-band AUC bar chart">
+  <figcaption>Figure 1: AUC-ROC within each oracle difficulty band, computed by filtering the 67,000 (agent, task) pairs to those in each band and running <code>sklearn.metrics.roc_auc_score</code> on the filtered subset. Records are pooled across all 5 CV folds. Generated by <code>python -m experiment_new_tasks.run_frontier_analysis --datasets swebench_verified --plots</code>.</figcaption>
 </figure>
 
 <h3>Frontier predictions are mostly noise</h3>
 
-<p>When the Combined predictor says a pair is in the frontier band [0.4, 0.6), where does it actually land?</p>
+<p>For each (agent, task) pair, we assign it to a <em>predicted</em> band (based on the predictor's output) and an <em>oracle</em> band (based on oracle_p). Each row shows: when the Combined predictor says a pair is in that predicted band, what oracle band does it actually fall in?</p>
 
 <table>
   <tr><th>Predicted band</th><th>[0, 0.2)</th><th>[0.2, 0.4)</th><th>[0.4, 0.6)</th><th>[0.6, 0.8)</th><th>[0.8, 1.0)</th><th>N</th></tr>
@@ -145,11 +121,11 @@
   <tr><td style="font-weight:600">[0.8, 1.0)</td><td>5.8%</td><td>2.4%</td><td>3.7%</td><td>8.0%</td><td class="good">80.1%</td><td>21,502</td></tr>
 </table>
 
-<p>The predictor is reliable at the extremes &mdash; 80% accuracy for "easy" and 72% for "hard." But when it predicts "frontier," <strong>only 16.6% of pairs actually land there.</strong> The plurality (29%) are easy tasks being misjudged. The Baseline does even worse at 11.2%. The predictor is doing coarse "hard vs. easy" classification, and the frontier predictions are spillover noise.</p>
+<p>80% accuracy for "easy," 72% for "hard." But when it predicts "frontier," <strong>only 16.6% actually land there</strong> &mdash; the plurality (29%) are easy tasks being misjudged. The baseline is even worse at 11.2%.</p>
 
 <h3>Frontier precision and recall</h3>
 
-<p>Using a wider [0.3, 0.7] band to capture more samples (base rate: 17.1% of pairs are truly frontier):</p>
+<p>Using a [0.3, 0.7] band (base rate: 17.1% of pairs are truly frontier). Precision = fraction of predicted-frontier pairs that are truly frontier. Recall = fraction of truly-frontier pairs that are identified:</p>
 
 <table>
   <tr><th>Predictor</th><th>Precision</th><th>Recall</th><th>#Predicted</th><th>#True</th></tr>
@@ -159,24 +135,24 @@
   <tr><td>Baseline</td><td>0.212</td><td>0.362</td><td>19,600</td><td>11,445</td></tr>
 </table>
 
-<p>Combined achieves 30% precision vs. 21% for the baseline &mdash; a real improvement over the 17% base rate, but still: <strong>70% of "frontier" predictions are wrong.</strong></p>
+<p>30% precision vs. 21% baseline &mdash; better than the 17% base rate, but <strong>70% of "frontier" predictions are wrong.</strong></p>
 
 <!-- ───────────── IMPROVEMENTS ───────────── -->
 <h2 id="improvements">Can Modified Approaches Do Better?</h2>
 
-<p>Knowing that the paper's pipeline struggles at the frontier, we tested four alternative approaches. All use the same LLM Judge features (15-dim) and the same 5-fold CV setup, so comparisons are apples-to-apples.</p>
-
-<h3>The four approaches</h3>
+<p>We tested four alternatives, all using the same LLM Judge features and 5-fold CV:</p>
 
 <table>
   <tr><th>Approach</th><th>Key Idea</th></tr>
-  <tr><td style="font-weight:600">Weighted Ridge</td><td>Same Ridge regression, but upweight frontier tasks in the loss. Weight = <code>4p(1&minus;p)</code>, peaking at 1.0 for 50% solve rate and decaying to 0 at the extremes. Tells the model: "get the medium-difficulty tasks right, even at the expense of easy/hard ones."</td></tr>
-  <tr><td style="font-weight:600">Uncertainty (Bayesian)</td><td>Replace Ridge with BayesianRidge, which gives a posterior distribution over <em>b</em> instead of a point estimate. Marginalize: <code>P(success) = E<sub>b</sub>[sigmoid(&theta; &minus; b)]</code>. When uncertain about difficulty, predictions get pulled toward 0.5 rather than overcommitting.</td></tr>
-  <tr><td style="font-weight:600">Direct (GBM)</td><td>Skip the scalar <em>b</em> bottleneck. Train a GradientBoostingClassifier on <code>[&theta;<sub>agent</sub>, task_features] &rarr; outcome</code> directly, predicting P(success) without decomposing into ability and difficulty.</td></tr>
-  <tr><td style="font-weight:600">Frontier Classifier</td><td>Reframe as classification: train GBM on <code>[&theta;<sub>agent</sub>, task_features] &rarr; is_frontier</code>. Directly optimizes for frontier identification. Outputs P(frontier), not P(success).</td></tr>
+  <tr><td style="font-weight:600">Weighted Ridge</td><td>Upweight frontier tasks in the Ridge loss. Weight = <code>4p(1&minus;p)</code>, peaking at p=0.5.</td></tr>
+  <tr><td style="font-weight:600">Uncertainty (Bayesian)</td><td>BayesianRidge gives a posterior over <em>b</em>. Marginalize: <code>P(success) = E<sub>b</sub>[sigmoid(&theta; &minus; b)]</code>. Uncertain predictions get pulled toward 0.5.</td></tr>
+  <tr><td style="font-weight:600">Direct (GBM)</td><td>Skip the scalar <em>b</em> bottleneck. GradientBoostingClassifier on <code>[&theta;, task_features] &rarr; outcome</code> directly.</td></tr>
+  <tr><td style="font-weight:600">Frontier Classifier</td><td>GBM on <code>[&theta;, task_features] &rarr; is_frontier</code>. Outputs P(frontier), not P(success).</td></tr>
 </table>
 
 <h3>Frontier discrimination: still intractable</h3>
+
+<p>Same per-band AUC analysis as above, now including the four new approaches. Generated identically: filter pairs to each oracle band, compute AUC on the subset:</p>
 
 <table>
   <tr><th>Predictor</th><th>[0, 0.2)</th><th>[0.2, 0.4)</th><th>[0.4, 0.6)</th><th>[0.6, 0.8)</th><th>[0.8, 1.0)</th><th>Overall</th></tr>
@@ -188,14 +164,15 @@
   <tr><td>Baseline</td><td>0.503</td><td>0.501</td><td class="highlight">0.508</td><td>0.527</td><td>0.565</td><td>0.716</td></tr>
 </table>
 
-<p><strong>No approach meaningfully improves frontier-band AUC.</strong> The best (Direct GBM at 0.518) is barely above the paper's Combined (0.515). Removing the scalar <em>b</em> bottleneck, reweighting the loss, marginalizing over uncertainty &mdash; none of it helps. The features simply don't contain enough signal to predict individual outcomes when a task is at an agent's boundary.</p>
+<p><strong>No approach improves frontier-band AUC.</strong> The best (Direct GBM, 0.518) barely exceeds the paper's Combined (0.515). The features don't contain enough signal to predict individual outcomes at an agent's boundary.</p>
 
-<h3>Precision/recall trade-offs: the Uncertainty approach stands out</h3>
+<h3>What can be recovered: frontier recall</h3>
+
+<p>Same precision/recall analysis as above, now including the new approaches. "Predicted frontier" = pairs where pred_p &isin; [0.3, 0.7]; "true frontier" = pairs where oracle_p &isin; [0.3, 0.7]:</p>
 
 <table>
   <tr><th>Predictor</th><th>Precision</th><th>Recall</th><th>#Predicted</th></tr>
   <tr><td>Combined (paper)</td><td style="font-weight:600">0.301</td><td>0.368</td><td>14,002</td></tr>
-  <tr><td>LLM Judge</td><td>0.295</td><td>0.380</td><td>14,737</td></tr>
   <tr><td>Weighted Ridge</td><td>0.281</td><td>0.464</td><td>18,925</td></tr>
   <tr><td>Direct (GBM)</td><td>0.268</td><td>0.473</td><td>20,182</td></tr>
   <tr><td style="font-weight:600">Uncertainty (Bayesian)</td><td>0.268</td><td style="font-weight:600; color:#27ae60;">0.640</td><td>27,335</td></tr>
@@ -203,83 +180,18 @@
   <tr><td>Baseline</td><td>0.212</td><td>0.362</td><td>19,600</td></tr>
 </table>
 
-<p>The <strong>Uncertainty (Bayesian)</strong> approach achieves <strong>0.64 recall</strong> &mdash; it finds nearly twice as many true frontier pairs as the paper's Combined predictor (0.37 recall). The mechanism is intuitive: when BayesianRidge is uncertain about a task's difficulty, the marginalized probability gets pulled toward 0.5, which lands more predictions in the frontier band. This comes at a cost &mdash; precision drops from 0.30 to 0.27 &mdash; but the <strong>net effect is positive</strong>: more true frontier pairs are captured.</p>
-
-<p>The Frontier Classifier achieves similar recall but with baseline-level precision (0.21), meaning it's labeling too many pairs as frontier. The Uncertainty approach gets the better trade-off.</p>
-
-<h3>Calibration: the clear win</h3>
-
-<div class="callout success">
-  <p><strong>Calibration is where the new approaches genuinely shine.</strong> The Uncertainty predictor cuts overall ECE by 60%, and the Direct GBM achieves the best frontier-region calibration. This means their probability estimates in the 30&ndash;70% range are much more trustworthy &mdash; even though they can't tell you which individual outcomes will be successes vs. failures.</p>
-</div>
-
-<table>
-  <tr><th>Predictor</th><th>Overall ECE</th><th>Frontier ECE</th></tr>
-  <tr><td>Oracle</td><td>0.008</td><td>0.010</td></tr>
-  <tr><td style="font-weight:600">Uncertainty (Bayesian)</td><td class="good">0.033</td><td>0.048</td></tr>
-  <tr><td style="font-weight:600">Direct (GBM)</td><td>0.041</td><td class="good">0.034</td></tr>
-  <tr><td style="font-weight:600">Weighted Ridge</td><td>0.065</td><td class="good">0.039</td></tr>
-  <tr><td>Combined (paper)</td><td>0.083</td><td>0.046</td></tr>
-  <tr><td>LLM Judge</td><td>0.080</td><td>0.057</td></tr>
-  <tr><td>Baseline</td><td>0.128</td><td>0.072</td></tr>
-</table>
-
-<figure>
-  <img src="plots/calibration_curves.png" alt="Calibration curves showing predicted probability vs actual success rate">
-  <figcaption>Figure 2: Calibration curves &mdash; predicted probability vs. actual success rate. The diagonal represents perfect calibration. The orange shaded region marks the frontier band [0.3, 0.7]. The Uncertainty and Direct (GBM) predictors track the diagonal much more closely than the paper's methods, especially in the frontier region.</figcaption>
-</figure>
-
-<p>The Uncertainty predictor achieves 0.033 overall ECE vs. 0.083 for the paper's best &mdash; a <strong>60% reduction in calibration error</strong>. The mechanism: by marginalizing over the posterior distribution of <em>b</em>, it naturally expresses epistemic uncertainty as probability estimates closer to 0.5, rather than overconfidently predicting extreme probabilities for tasks whose difficulty is hard to pin down.</p>
-
-<p>The Direct GBM achieves the best <strong>frontier-specific</strong> ECE (0.034) &mdash; when it says an agent has a 40% chance of solving a task, the actual success rate is very close to 40%.</p>
+<p>The <strong>Uncertainty (Bayesian)</strong> approach achieves <strong>0.64 recall</strong> &mdash; nearly double the paper's 0.37. When BayesianRidge is uncertain about difficulty, the marginalized probability gets pulled toward 0.5, naturally landing more predictions in the frontier band. Precision drops modestly (0.30 &rarr; 0.27), but the net effect is that substantially more true frontier pairs are captured. The Frontier Classifier achieves similar recall but with baseline-level precision (0.21), making Uncertainty the better trade-off.</p>
 
 <!-- ───────────── TAKEAWAYS ───────────── -->
 <h2 id="takeaways">Takeaways</h2>
 
-<h3>The non-uniformity is real and fundamental</h3>
+<ol>
+  <li><strong>The original approach's performance is not uniform.</strong> The paper's 0.84 overall AUC is driven by the extremes &mdash; correctly classifying obviously easy and obviously hard tasks, which make up 72% of pairs. In the medium-difficulty frontier band [0.4, 0.6), where the agent's outcome is genuinely uncertain, all predictors achieve AUC &asymp; 0.51 (random). The confusion matrix confirms this: when the predictor says "frontier," only 16.6% of pairs actually are.</li>
 
-<p>The paper's predictors are genuinely effective &mdash; but their 0.84 AUC-ROC is not uniformly distributed across difficulty levels. Performance is strong at the extremes (AUC &gt; 0.6 for tasks where agents have &lt;20% or &gt;80% success probability) and essentially random in the middle (AUC &asymp; 0.51 for the 40&ndash;60% band). This isn't a flaw in the paper's method &mdash; it's a fundamental property: even the Oracle with full data only achieves 0.58 in the frontier band. The available features simply don't contain enough signal to discriminate outcomes when tasks are at an agent's boundary.</p>
+  <li><strong>This is a fundamental limitation, not a modeling problem.</strong> Even the Oracle &mdash; the IRT model trained on <em>all</em> data &mdash; only achieves 0.58 AUC in the frontier band. We tested four alternative approaches (weighted loss, Bayesian uncertainty, direct GBM prediction, frontier classification) and none meaningfully improved frontier-band discrimination. The task features (problem descriptions, LLM judge ratings, embeddings) simply don't contain enough information to predict individual outcomes when a task is at an agent's boundary.</li>
 
-<h3>What the predictor is good for</h3>
-
-<p>The non-uniform performance profile means the predictor is well-suited for some tasks but not others:</p>
-
-<ul>
-  <li><strong>Difficulty ordering for curriculum scheduling:</strong> The predictor reliably ranks tasks along the easy&ndash;hard spectrum. For easy&rarr;hard curriculum approaches like <a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a>, this is exactly what's needed. You don't need perfect resolution in the middle &mdash; you need a reliable ordering, which the predictor provides.</li>
-  <li><strong>Filtering extremes:</strong> The confusion matrix shows 80% accuracy when predicting "easy" and 72% for "hard." If you're generating candidate environments and want to remove the obvious junk (too easy, too hard), the predictor is a reliable and cheap pre-filter.</li>
-  <li><strong>Aggregate difficulty estimation:</strong> With the Bayesian Uncertainty modification (60% lower ECE), you can trust aggregate statistics like "roughly 20% of these candidate tasks are frontier-difficulty for agent X" &mdash; even though individual task-level predictions in that band are noisy.</li>
-</ul>
-
-<h3>What the predictor cannot do</h3>
-
-<ul>
-  <li><strong>Fine-grained frontier identification:</strong> Among tasks in the 30&ndash;70% success probability range, the predictor cannot reliably tell you which ones will be solved and which won't. For adaptive task selection within this band, you need online signals &mdash; learning progress, regret, or bandit approaches like <a href="https://arxiv.org/abs/2508.05015">SPaRFT</a> that adapt based on actual training outcomes.</li>
-</ul>
-
-<h3>The Uncertainty modification is worth adopting</h3>
-
-<p>Of the four modifications we tested, the <strong>Bayesian Uncertainty</strong> approach offers the best practical trade-off: 60% better calibration, 73% higher frontier recall, at a negligible cost in precision. The mechanism &mdash; marginalizing over posterior uncertainty in difficulty &mdash; is principled and adds minimal computational overhead. If you're using IRT difficulty predictions downstream, replacing the point-estimate Ridge regression with BayesianRidge is a simple change that produces more trustworthy probability estimates, especially in the uncertain middle range.</p>
-
-<h3>Open questions</h3>
-
-<ul>
-  <li>Would <strong>2PL IRT</strong> (adding a per-task discrimination parameter) help? Tasks with low discrimination have intrinsically fuzzy frontiers that no predictor can resolve. Predicting discrimination from features could help identify which tasks <em>can</em> be frontier-classified at all.</li>
-  <li>Could <strong>multi-dimensional IRT</strong> capture task-agent interactions that 1PL misses? An agent might be at the frontier on debugging tasks but strong on refactoring &mdash; a single scalar difficulty can't express this.</li>
-  <li>Is there a <strong>richer feature set</strong> &mdash; agent trajectory data, execution traces, or runtime behavior &mdash; that contains frontier-relevant signal beyond what problem descriptions and LLM judge ratings provide?</li>
-  <li>Does the non-uniformity observed here generalize to <strong>other benchmarks and domains</strong> (GSO, TerminalBench, non-coding RL environments)?</li>
-</ul>
-
-<h3>Related work</h3>
-
-<p>Our analysis connects to a growing body of work on difficulty-aware training for LLMs:</p>
-<ul>
-  <li><a href="https://www.nature.com/articles/s41467-019-12552-4">The 85% Rule for Optimal Learning</a> (Wilson et al., 2019) &mdash; proves that SGD-based learners learn fastest at ~85% accuracy, not 50%. The optimal training difficulty is easier than the "frontier" midpoint.</li>
-  <li><a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a> (2025) &mdash; easy&rarr;hard curriculum RL for LLM reasoning. Easy tasks build foundations; they must be faded out to avoid overfitting.</li>
-  <li><a href="https://arxiv.org/html/2602.14868">Goldilocks RL</a> (2026) &mdash; teacher model adaptively selects tasks at appropriate difficulty for the student, avoiding both extremes.</li>
-  <li><a href="https://arxiv.org/abs/2508.05015">SPaRFT</a> (2025) &mdash; clusters tasks by difficulty + semantics, uses bandits for adaptive selection. Achieves comparable accuracy with 100&times; fewer samples.</li>
-  <li><a href="https://arxiv.org/abs/2603.27226">Rethinking Easy-to-Hard</a> (2026) &mdash; a contrasting finding: no robust advantage of difficulty-based sequencing for deductive reasoning, suggesting the picture is domain-dependent.</li>
-  <li><a href="https://arxiv.org/abs/2405.02481">Proximal Curriculum</a> (IJCAI 2024) &mdash; formalizes the zone of proximal development for RL curriculum design.</li>
-</ul>
+  <li><strong>What can be recovered: frontier recall via uncertainty.</strong> While we can't improve discrimination <em>within</em> the frontier, we can improve <em>identification</em> of frontier pairs. The Bayesian Uncertainty approach nearly doubles recall (0.37 &rarr; 0.64) for finding pairs in the 30&ndash;70% success range, at a small cost in precision (0.30 &rarr; 0.27). The mechanism is principled: marginalizing over posterior uncertainty in difficulty pulls uncertain predictions toward 0.5, naturally flagging more pairs as frontier. This means the Uncertainty approach captures substantially more of the true frontier pairs, which is useful for applications like building a candidate pool of medium-difficulty tasks for curriculum scheduling or environment search &mdash; even though individual frontier predictions remain noisy.</li>
+</ol>
 
 <hr>
 
