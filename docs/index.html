@@ -25,28 +25,34 @@
 <main>
 
 <!-- ───────────── HERO ───────────── -->
-<h1>Can IRT Predictors Identify the Tasks That Matter Most for Training?</h1>
-<p class="tagline">A frontier-focused evaluation of the difficulty predictors from <em>Agent Psychometrics</em> (Ge et al., 2026)</p>
+<h1>How Uniformly Good Are IRT Difficulty Predictors?</h1>
+<p class="tagline">The predictors from <em>Agent Psychometrics</em> work well overall &mdash; but not equally well across all difficulty levels. We investigate where they break down, why it matters, and what can be done about it.</p>
 <p class="meta">
-  Building on <a href="https://arxiv.org/abs/2604.00594">arXiv:2604.00594</a> &middot;
+  Building on <a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics (Ge et al., 2026)</a> &middot;
   <a href="https://github.com/Sujai1/agent-psychometrics">GitHub</a> &middot;
   SWE-bench Verified &middot; 500 tasks &middot; 134 agents &middot; 67,000 (agent, task) pairs
 </p>
 
 <div class="callout">
-  <p><strong>Key finding:</strong> The paper's predictors achieve 0.84 AUC-ROC overall, but within the frontier band &mdash; tasks where agents succeed 40&ndash;60% of the time &mdash; discriminative power drops to 0.51, barely above random. This is a fundamental limitation: even the oracle (full IRT with all data) only reaches 0.58 in this band. Modified approaches improve calibration substantially but cannot crack frontier discrimination.</p>
+  <p><strong>Key finding:</strong> The paper's predictors achieve 0.84 AUC-ROC overall &mdash; but this performance is not uniform across difficulty levels. Predictors excel at identifying obviously easy and obviously hard tasks (AUC &gt; 0.6), but in the medium-difficulty "frontier" band &mdash; tasks where agents succeed 40&ndash;60% of the time &mdash; discriminative power drops to 0.51, barely above random. This is a fundamental bottleneck: even the oracle (full IRT with all data) only reaches 0.58 in this band. We test four modified approaches and find that while frontier discrimination remains intractable, calibration can be substantially improved.</p>
 </div>
 
 <!-- ───────────── MOTIVATION ───────────── -->
-<h2 id="motivation">Motivation: Why the Frontier Matters</h2>
+<h2 id="motivation">Motivation: Where Uniform Performance Matters</h2>
 
-<p>The <a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics</a> paper shows that task difficulty in agentic coding benchmarks can be predicted from cheap features &mdash; LLM-as-a-judge ratings and embeddings &mdash; without running any agents. The paper frames this as useful for <strong>benchmark calibration</strong>: estimating how hard new tasks are before expensive evaluation runs.</p>
+<p><a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics</a> (Ge et al., 2026) shows that task difficulty in agentic coding benchmarks can be predicted from cheap features &mdash; LLM-as-a-judge ratings and embeddings &mdash; without running any agents. The paper demonstrates strong overall predictive performance (0.84 AUC-ROC) and frames this as useful for benchmark calibration and efficient agent evaluation.</p>
 
-<p>But there's a related, arguably more impactful use case: <strong>training curriculum design</strong>. If you're training an agent via RL and can generate many candidate environments, which ones should you train on?</p>
+<p>But overall AUC-ROC can mask important non-uniformity. We would naturally expect the predictor to do well on tasks that are obviously easy or obviously hard &mdash; these extremes are the easiest to classify. The more interesting question is: <strong>how well does the predictor perform across the full difficulty spectrum?</strong> In particular, can it resolve the medium-difficulty region where outcomes are genuinely uncertain?</p>
 
-<p>The answer, from both learning theory and psychometrics, is the <strong>frontier</strong> &mdash; tasks where the agent has roughly a 30&ndash;70% chance of success. Too easy and there's nothing to learn. Too hard and the agent gets no useful reward signal. The frontier is where the gradient is strongest, the zone of proximal development. In IRT terms, this is exactly where <a href="https://en.wikipedia.org/wiki/Fisher_information">Fisher information</a> is maximized: <code>I = p(1-p)</code>, which peaks at <code>p = 0.5</code>.</p>
+<p>This matters for at least two practical reasons:</p>
 
-<p>So the question becomes: <strong>can the paper's predictors reliably identify frontier tasks?</strong> The headline AUC of 0.84 looks promising &mdash; but AUC is computed over all (agent, task) pairs, including the trivially easy and trivially hard ones. Does the predictor actually work where it matters most?</p>
+<ol>
+  <li><strong>Curriculum scheduling for RL training.</strong> Recent work on training LLMs with RL &mdash; including <a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a> (2025), <a href="https://arxiv.org/html/2602.14868">Goldilocks RL</a> (2026), and <a href="https://arxiv.org/abs/2508.05015">SPaRFT</a> (2025) &mdash; shows that scheduling tasks by difficulty (easy&rarr;hard) can substantially improve sample efficiency, in some cases by <a href="https://arxiv.org/abs/2508.05015">up to 100&times;</a>. To build an effective curriculum, you need to know not just <em>which</em> tasks are easy or hard, but also which fall in between. If the predictor only resolves the extremes, the curriculum has a blind spot in the middle.</li>
+
+  <li><strong>Guiding environment search and generation.</strong> If you're procedurally generating RL training environments, a cheap difficulty predictor lets you evaluate candidates without running agents. But if the predictor can only tell you "this is easy" or "this is hard" and is unreliable in between, it can't help you search for environments at the right difficulty level for your current agent &mdash; the <a href="https://arxiv.org/abs/2405.02481">zone of proximal development</a> where learning is fastest.</li>
+</ol>
+
+<p>So we ask: <strong>is the paper's strong overall AUC driven by the easy cases, or is it uniform across difficulty levels?</strong></p>
 
 <!-- ───────────── BACKGROUND ───────────── -->
 <h2 id="background">Background: The IRT Prediction Pipeline</h2>
@@ -230,30 +236,49 @@
 <!-- ───────────── TAKEAWAYS ───────────── -->
 <h2 id="takeaways">Takeaways</h2>
 
-<p>These results cleanly separate two capabilities that AUC-ROC conflates:</p>
+<h3>The non-uniformity is real and fundamental</h3>
 
-<ol>
-  <li><strong>Discrimination within the frontier</strong> (per-band AUC): None of the approaches help &mdash; not the paper's, not ours. The available features don't contain enough information to predict individual outcomes when a task is at an agent's boundary. This is <strong>a fundamental limitation</strong>, confirmed by the Oracle's own poor performance (0.579) in this band.</li>
-  <li><strong>Calibration</strong> (ECE): The new approaches substantially improve this. Better calibration means the <em>average</em> predicted probability is more accurate, which helps with aggregate questions ("what fraction of my candidate tasks are frontier?") even though individual predictions remain noisy.</li>
-</ol>
+<p>The paper's predictors are genuinely effective &mdash; but their 0.84 AUC-ROC is not uniformly distributed across difficulty levels. Performance is strong at the extremes (AUC &gt; 0.6 for tasks where agents have &lt;20% or &gt;80% success probability) and essentially random in the middle (AUC &asymp; 0.51 for the 40&ndash;60% band). This isn't a flaw in the paper's method &mdash; it's a fundamental property: even the Oracle with full data only achieves 0.58 in the frontier band. The available features simply don't contain enough signal to discriminate outcomes when tasks are at an agent's boundary.</p>
 
-<h3>What this means for curriculum design</h3>
+<h3>What the predictor is good for</h3>
 
-<p>If you're selecting tasks for RL training from a large pool of candidates:</p>
+<p>The non-uniform performance profile means the predictor is well-suited for some tasks but not others:</p>
 
-<ol>
-  <li><strong>Use feature-based prediction as a coarse filter.</strong> The paper's predictors (or the calibration-improved versions) can reliably remove tasks that are way too easy (&gt;80% solve rate) or way too hard (&lt;20%). This eliminates ~70% of candidates that would waste training compute.</li>
-  <li><strong>Don't rely on them for fine-grained frontier selection.</strong> Among the remaining ~30%, the predictor cannot tell you which specific tasks are at the agent's learning frontier. For that, you need <em>online signals</em> &mdash; learning progress, regret, or multi-armed bandit approaches that adapt based on actual training outcomes.</li>
-  <li><strong>Use the Uncertainty predictor if you need calibrated probability estimates.</strong> Its 60% reduction in calibration error means you can trust its aggregate statistics ("roughly 15% of these tasks are frontier for agent X") even though you can't trust individual predictions.</li>
-</ol>
+<ul>
+  <li><strong>Difficulty ordering for curriculum scheduling:</strong> The predictor reliably ranks tasks along the easy&ndash;hard spectrum. For easy&rarr;hard curriculum approaches like <a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a>, this is exactly what's needed. You don't need perfect resolution in the middle &mdash; you need a reliable ordering, which the predictor provides.</li>
+  <li><strong>Filtering extremes:</strong> The confusion matrix shows 80% accuracy when predicting "easy" and 72% for "hard." If you're generating candidate environments and want to remove the obvious junk (too easy, too hard), the predictor is a reliable and cheap pre-filter.</li>
+  <li><strong>Aggregate difficulty estimation:</strong> With the Bayesian Uncertainty modification (60% lower ECE), you can trust aggregate statistics like "roughly 20% of these candidate tasks are frontier-difficulty for agent X" &mdash; even though individual task-level predictions in that band are noisy.</li>
+</ul>
+
+<h3>What the predictor cannot do</h3>
+
+<ul>
+  <li><strong>Fine-grained frontier identification:</strong> Among tasks in the 30&ndash;70% success probability range, the predictor cannot reliably tell you which ones will be solved and which won't. For adaptive task selection within this band, you need online signals &mdash; learning progress, regret, or bandit approaches like <a href="https://arxiv.org/abs/2508.05015">SPaRFT</a> that adapt based on actual training outcomes.</li>
+</ul>
+
+<h3>The Uncertainty modification is worth adopting</h3>
+
+<p>Of the four modifications we tested, the <strong>Bayesian Uncertainty</strong> approach offers the best practical trade-off: 60% better calibration, 73% higher frontier recall, at a negligible cost in precision. The mechanism &mdash; marginalizing over posterior uncertainty in difficulty &mdash; is principled and adds minimal computational overhead. If you're using IRT difficulty predictions downstream, replacing the point-estimate Ridge regression with BayesianRidge is a simple change that produces more trustworthy probability estimates, especially in the uncertain middle range.</p>
 
 <h3>Open questions</h3>
 
 <ul>
-  <li>Would <strong>2PL IRT</strong> (adding a discrimination parameter per task) help? Tasks with low discrimination have intrinsically fuzzy frontiers that no predictor can resolve.</li>
-  <li>Could <strong>multi-dimensional IRT</strong> capture task-agent interactions that 1PL misses? An agent might be frontier on debugging tasks but strong on refactoring.</li>
-  <li>Is there a <strong>richer feature set</strong> &mdash; beyond problem statements and LLM judge ratings &mdash; that contains frontier-relevant signal? Agent trajectory data, for instance.</li>
-  <li>How do these findings translate to <strong>RL environments</strong> beyond coding benchmarks?</li>
+  <li>Would <strong>2PL IRT</strong> (adding a per-task discrimination parameter) help? Tasks with low discrimination have intrinsically fuzzy frontiers that no predictor can resolve. Predicting discrimination from features could help identify which tasks <em>can</em> be frontier-classified at all.</li>
+  <li>Could <strong>multi-dimensional IRT</strong> capture task-agent interactions that 1PL misses? An agent might be at the frontier on debugging tasks but strong on refactoring &mdash; a single scalar difficulty can't express this.</li>
+  <li>Is there a <strong>richer feature set</strong> &mdash; agent trajectory data, execution traces, or runtime behavior &mdash; that contains frontier-relevant signal beyond what problem descriptions and LLM judge ratings provide?</li>
+  <li>Does the non-uniformity observed here generalize to <strong>other benchmarks and domains</strong> (GSO, TerminalBench, non-coding RL environments)?</li>
+</ul>
+
+<h3>Related work</h3>
+
+<p>Our analysis connects to a growing body of work on difficulty-aware training for LLMs:</p>
+<ul>
+  <li><a href="https://www.nature.com/articles/s41467-019-12552-4">The 85% Rule for Optimal Learning</a> (Wilson et al., 2019) &mdash; proves that SGD-based learners learn fastest at ~85% accuracy, not 50%. The optimal training difficulty is easier than the "frontier" midpoint.</li>
+  <li><a href="https://arxiv.org/abs/2506.06632">E2H Reasoner</a> (2025) &mdash; easy&rarr;hard curriculum RL for LLM reasoning. Easy tasks build foundations; they must be faded out to avoid overfitting.</li>
+  <li><a href="https://arxiv.org/html/2602.14868">Goldilocks RL</a> (2026) &mdash; teacher model adaptively selects tasks at appropriate difficulty for the student, avoiding both extremes.</li>
+  <li><a href="https://arxiv.org/abs/2508.05015">SPaRFT</a> (2025) &mdash; clusters tasks by difficulty + semantics, uses bandits for adaptive selection. Achieves comparable accuracy with 100&times; fewer samples.</li>
+  <li><a href="https://arxiv.org/abs/2603.27226">Rethinking Easy-to-Hard</a> (2026) &mdash; a contrasting finding: no robust advantage of difficulty-based sequencing for deductive reasoning, suggesting the picture is domain-dependent.</li>
+  <li><a href="https://arxiv.org/abs/2405.02481">Proximal Curriculum</a> (IJCAI 2024) &mdash; formalizes the zone of proximal development for RL curriculum design.</li>
 </ul>
 
 <hr>
@@ -262,7 +287,7 @@
 
 <footer>
   <p>
-    Analysis code: <a href="https://github.com/Sujai1/agent-psychometrics">github.com/Sujai1/agent-psychometrics</a>
+    Analysis code: <a href="https://github.com/Sujai1/agent-psychology">github.com/Sujai1/agent-psychology</a>
     &middot; Original paper: <a href="https://arxiv.org/abs/2604.00594">Agent Psychometrics (Ge et al., 2026)</a>
     &middot; Data: <a href="https://www.swebench.com/">SWE-bench Verified</a>
   </p>
