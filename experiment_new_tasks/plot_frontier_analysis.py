@@ -199,8 +199,8 @@ def plot_band_aucs(
         ax.set_xticks(x)
         ax.set_xticklabels(band_labels, fontsize=9)
         ax.set_ylim(0, 1.05)
-        ax.legend(fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.02),
-                  ncol=min(n_preds + 1, 5), frameon=False)
+        ax.legend(fontsize=7, loc="lower center", bbox_to_anchor=(0.5, 1.08),
+                  ncol=min(n_preds + 1, 5), frameon=False, columnspacing=1.0)
         ax.grid(axis="y", alpha=0.2)
         ax.set_axisbelow(True)
 
@@ -209,8 +209,9 @@ def plot_band_aucs(
         row, col = divmod(idx, n_cols)
         axes[row][col].set_visible(False)
 
-    fig.suptitle("Per-Band AUC: Discriminative Power by Difficulty Region", fontsize=15, y=1.01)
     fig.tight_layout()
+    fig.subplots_adjust(top=0.82)
+    fig.suptitle("Per-Band AUC: Discriminative Power by Difficulty Region", fontsize=15, y=0.98)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "band_aucs.png"
